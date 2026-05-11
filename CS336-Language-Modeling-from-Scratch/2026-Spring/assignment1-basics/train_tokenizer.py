@@ -46,10 +46,10 @@ def parse_args():
     parser.add_argument("--input-path", required=True)
     parser.add_argument("--dataset-name", default=None)
     parser.add_argument("--vocab-size", type=int, required=True)
-    parser.add_argument("--output-root", default="outputs")
-    parser.add_argument("--num-processes", type=int, default=4)
+    parser.add_argument("--output-root", default="tokenizers")
+    parser.add_argument("--num-processes", type=int, default=1)
 
-    parser.add_argument("--wandb-project", default="cs336-bpe")
+    parser.add_argument("--wandb-project", default="cs336-assignment-1")
     parser.add_argument("--wandb-entity", default=None)
     parser.add_argument("--disable-wandb", action="store_true")
 
