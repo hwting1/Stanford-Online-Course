@@ -6,12 +6,13 @@ import time
 import resource
 
 import wandb
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, whoami
 
 from cs336_basics.tokenizer import train_bpe
 
 
 SPECIAL_TOKENS = ["<|endoftext|>"]
+HF_REPO_TYPE = "model"
 
 
 def save_vocab(vocab, vocab_path: Path):
@@ -53,11 +54,47 @@ def parse_args():
     parser.add_argument("--wandb-entity", default=None)
     parser.add_argument("--disable-wandb", action="store_true")
 
-    parser.add_argument("--hf-repo-id", default=None, help="e.g. username/cs336-tokenizers")
-    parser.add_argument("--hf-repo-type", default="dataset")
+    parser.add_argument("--hf-repo-id", default=None, help="e.g. username/cs336-assignment-1")
     parser.add_argument("--hf-private", action="store_true")
     parser.add_argument("--disable-hf-upload", action="store_true")
     return parser.parse_args()
+
+
+def upload_to_hf(output_dir: Path, run_name: str, repo_id: str, private: bool):
+    print("=== Uploading to Hugging Face Hub ===")
+    print(f"HF repo id: {repo_id}")
+    print(f"HF repo type: {HF_REPO_TYPE}")
+    print(f"Local folder: {output_dir}")
+    print(f"Path in repo: {run_name}")
+
+    try:
+        user_info = whoami()
+        print(f"HF authenticated as: {user_info.get('name', user_info)}")
+    except Exception as e:
+        raise RuntimeError(
+            "Hugging Face authentication not found or invalid. "
+            "Run `hf auth login` or `huggingface-cli login` first."
+        ) from e
+
+    api = HfApi()
+
+    repo_url = api.create_repo(
+        repo_id=repo_id,
+        repo_type=HF_REPO_TYPE,
+        private=private,
+        exist_ok=True,
+    )
+    print(f"HF repo ready: {repo_url}")
+
+    commit_info = api.upload_folder(
+        repo_id=repo_id,
+        repo_type=HF_REPO_TYPE,
+        folder_path=str(output_dir),
+        path_in_repo=run_name,
+        commit_message=f"Add {run_name}",
+    )
+
+    print(f"HF upload complete: {commit_info}")
 
 
 def main():
@@ -86,6 +123,9 @@ def main():
                 "special_tokens": SPECIAL_TOKENS,
                 "num_processes": args.num_processes,
                 "output_dir": str(output_dir),
+                "hf_repo_id": args.hf_repo_id,
+                "hf_repo_type": HF_REPO_TYPE,
+                "hf_path_in_repo": run_name if args.hf_repo_id else None,
             },
         )
 
@@ -111,6 +151,7 @@ def main():
 
     longest_id, longest_token = max(vocab.items(), key=lambda item: len(item[1]))
 
+    print("Saving local tokenizer files...")
     save_vocab(vocab, vocab_path)
     save_merges(merges, merges_path)
 
@@ -129,6 +170,9 @@ def main():
         "longest_token_repr": repr(longest_token),
         "vocab_file_mb": vocab_path.stat().st_size / (1024 ** 2),
         "merges_file_mb": merges_path.stat().st_size / (1024 ** 2),
+        "hf_repo_id": args.hf_repo_id,
+        "hf_repo_type": HF_REPO_TYPE,
+        "hf_path_in_repo": run_name if args.hf_repo_id else None,
     }
 
     with open(metadata_path, "w", encoding="utf-8") as f:
@@ -148,20 +192,14 @@ def main():
         wandb_run.log_artifact(artifact)
 
     if args.hf_repo_id and not args.disable_hf_upload:
-        api = HfApi()
-        api.create_repo(
+        upload_to_hf(
+            output_dir=output_dir,
+            run_name=run_name,
             repo_id=args.hf_repo_id,
-            repo_type=args.hf_repo_type,
             private=args.hf_private,
-            exist_ok=True,
         )
-        api.upload_folder(
-            repo_id=args.hf_repo_id,
-            repo_type=args.hf_repo_type,
-            folder_path=str(output_dir),
-            path_in_repo=run_name,
-            commit_message=f"Add {run_name}",
-        )
+    else:
+        print("HF upload skipped.")
 
     print("Done!")
     for k, v in metrics.items():
