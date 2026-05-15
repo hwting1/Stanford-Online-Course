@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Action Item Extractor</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; margin: 2rem auto; max-width: 800px; padding: 0 1rem; }
+      h1 { font-size: 1.5rem; }
+      h2 { font-size: 1.1rem; margin-top: 2rem; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+      textarea { width: 100%; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace; }
+      button { padding: 0.5rem 1rem; }
+      .items { margin-top: 1rem; }
+      .item { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
+      .note-card { border: 1px solid #e5e7eb; border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0.25rem 0; }
+      .note-meta { color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem; }
+      .muted { color: #6b7280; font-size: 0.875rem; }
+      .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Action Item Extractor</h1>
+    <p class="muted">Paste notes and extract actionable items. Minimal raw HTML frontend.</p>
+
+    <label for="text">Notes</label>
+    <textarea id="text" placeholder="Paste notes here...&#10;e.g.&#10;- [ ] Set up database&#10;- Implement extract endpoint"></textarea>
+    <div class="row">
+      <label class="row"><input id="save_note" type="checkbox" checked /> Save as note</label>
+      <button id="extract">Extract</button>
+      <button id="extract-llm">Extract LLM</button>
+    </div>
+
+    <div class="items" id="items"></div>
+
+    <h2>Notes</h2>
+    <div class="row">
+      <button id="list-notes">List Notes</button>
+    </div>
+    <div id="notes-list" style="margin-top:0.75rem;"></div>
+
+    <script>
+      const $ = (sel) => document.querySelector(sel);
+      const itemsEl = $('#items');
+
+      async function runExtract(endpoint) {
+        const text = $('#text').value;
+        const save = $('#save_note').checked;
+        itemsEl.textContent = 'Extracting…';
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, save_note: save }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Request failed');
+          }
+          const data = await res.json();
+          if (!data.items || data.items.length === 0) {
+            itemsEl.innerHTML = '<p class="muted">No action items found.</p>';
+            return;
+          }
+          itemsEl.innerHTML = data.items.map(it => (
+            `<div class="item"><input type="checkbox" data-id="${it.id}" /> <span>${it.text}</span></div>`
+          )).join('');
+          itemsEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', async (e) => {
+              const id = e.target.getAttribute('data-id');
+              await fetch(`/action-items/${id}/done`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ done: e.target.checked }),
+              });
+            });
+          });
+        } catch (err) {
+          console.error(err);
+          itemsEl.textContent = `Error: ${err.message}`;
+        }
+      }
+
+      $('#extract').addEventListener('click', () => runExtract('/action-items/extract'));
+      $('#extract-llm').addEventListener('click', () => runExtract('/action-items/extract-llm'));
+
+      $('#list-notes').addEventListener('click', async () => {
+        const notesEl = $('#notes-list');
+        notesEl.textContent = 'Loading…';
+        try {
+          const res = await fetch('/notes');
+          if (!res.ok) throw new Error('Request failed');
+          const notes = await res.json();
+          if (!notes || notes.length === 0) {
+            notesEl.innerHTML = '<p class="muted">No notes saved yet.</p>';
+            return;
+          }
+          notesEl.innerHTML = notes.map(n => `
+            <div class="note-card">
+              <div>${n.content}</div>
+              <div class="note-meta">id: ${n.id} &nbsp;·&nbsp; ${n.created_at}</div>
+            </div>`).join('');
+        } catch (err) {
+          console.error(err);
+          notesEl.textContent = `Error: ${err.message}`;
+        }
+      });
+    </script>
+  </body>
+</html>
+
