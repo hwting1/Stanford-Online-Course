@@ -77,6 +77,12 @@ def download_offline_files(*, root_path: Path) -> None:
 
 @app.function(image=build_image(), volumes=VOLUME_MOUNTS, timeout=60 * 60 * 12)
 def main(offline_only: bool = False):
+    opener = urllib.request.build_opener()
+    opener.addheaders = [
+        ("User-Agent", "Mozilla/5.0")
+    ]
+    urllib.request.install_opener(opener)
+
     root_path = get_shared_assets_path()
     download_offline_files(root_path=root_path)
     if offline_only:
